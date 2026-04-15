@@ -13,7 +13,7 @@ from news_engine.models import NewsFeed
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
 
 def _category_color(cat_key: str) -> str:
@@ -31,8 +31,13 @@ def _category_icon(cat_key: str) -> str:
     return cat.get("icon", "📄")
 
 
-def generate_html_string(feed: NewsFeed) -> str:
-    """Build the complete HTML string from a NewsFeed."""
+def generate_html_string(feed: NewsFeed, saved_articles: dict = None) -> str:
+    """Build the complete HTML string from a NewsFeed.
+    
+    saved_articles: dict mapping article URL -> relative path to local clean HTML
+    """
+    if saved_articles is None:
+        saved_articles = {}
 
     if not feed.articles:
         return "<html><body><h1>No articles loaded</h1></body></html>"
@@ -62,10 +67,21 @@ def generate_html_string(feed: NewsFeed) -> str:
         source_escaped = html_mod.escape(a.source)
         link_escaped = html_mod.escape(a.link, quote=True)
 
-        cards_html += f"""    <a href="{link_escaped}" target="_blank" rel="noopener noreferrer" class="article-card" data-category="{a.category}">
+        # Use local clean version if available, otherwise original
+        local_path = saved_articles.get(a.link)
+        if local_path:
+            href = html_mod.escape(local_path, quote=True)
+            target = ""
+            badge = '<span class="reader-badge">📖</span>'
+        else:
+            href = link_escaped
+            target = ' target="_blank" rel="noopener noreferrer"'
+            badge = '<span class="ext-badge">↗</span>'
+
+        cards_html += f"""    <a href="{href}"{target} class="article-card" data-category="{a.category}">
       <div class="article-meta">
         <span class="source-badge" style="background:{color}">{source_escaped}</span>
-        <span class="article-time">{a.time_ago}</span>
+        <span class="article-time">{a.time_ago} {badge}</span>
       </div>
       <h3 class="article-title">{title_escaped}</h3>
       <p class="article-summary">{summary_escaped}</p>
@@ -261,6 +277,17 @@ def generate_html_string(feed: NewsFeed) -> str:
     font-size: 12px;
     color: var(--text-muted);
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }}
+  .reader-badge {{
+    font-size: 10px;
+    opacity: 0.7;
+  }}
+  .ext-badge {{
+    font-size: 10px;
+    opacity: 0.4;
   }}
   .article-title {{
     font-size: 17px;
@@ -407,12 +434,26 @@ document.addEventListener('DOMContentLoaded', function() {{
 def generate_html(
     categories: list = None,
     output_path: str = "fake_news.html",
+    extract_articles: bool = True,
 ) -> str:
-    """Fetch news and write HTML report to disk."""
+    """Fetch news, extract articles, and write HTML report to disk."""
     from news_engine.fetcher import fetch_all_news
 
     feed = fetch_all_news(categories=categories)
-    html = generate_html_string(feed)
+
+    # Extract full articles and save locally
+    saved_articles = {}
+    if extract_articles:
+        try:
+            from news_engine.extractor import save_articles
+            p = Path(output_path)
+            articles_dir = str(p.parent / "articles")
+            saved_articles = save_articles(feed.articles, articles_dir=articles_dir)
+            logger.info("Extracted %d/%d articles", len(saved_articles), len(feed.articles))
+        except Exception as e:
+            logger.error("Article extraction failed: %s", e)
+
+    html = generate_html_string(feed, saved_articles=saved_articles)
     p = Path(output_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(html, encoding="utf-8")

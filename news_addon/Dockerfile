@@ -2,7 +2,7 @@ ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
 RUN apk add --no-cache python3 py3-pip py3-requests py3-lxml py3-beautifulsoup4 nginx jq tzdata \
-    && pip3 install --no-cache-dir --break-system-packages feedparser
+    && pip3 install --no-cache-dir --break-system-packages feedparser trafilatura
 
 ENV TZ=America/Chicago
 

@@ -7,3 +7,4 @@ build/
 fake_news.html
 *.jpg
 .DS_Store
+articles/

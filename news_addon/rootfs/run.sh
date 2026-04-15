@@ -98,6 +98,7 @@ import sys, traceback
 sys.path.insert(0, '.')
 try:
     from news_engine.fetcher import fetch_all_news
+    from news_engine.extractor import save_articles
     from integrations.html_report import generate_html_string
     cats = '${CATEGORIES}'.split(',')
     cats = [c.strip() for c in cats if c.strip()]
@@ -107,7 +108,14 @@ try:
         print('WARNING: ' + str(feed.failed_feeds) + ' feeds failed')
         for e in feed.error_details[:5]:
             print('  ' + str(e))
-    html = generate_html_string(feed)
+    # Extract full articles
+    saved = {}
+    try:
+        saved = save_articles(feed.articles, articles_dir='/app/www/articles')
+        print('Extracted ' + str(len(saved)) + '/' + str(len(feed.articles)) + ' articles')
+    except Exception as e:
+        print('Article extraction warning: ' + str(e))
+    html = generate_html_string(feed, saved_articles=saved)
     with open('${REPORT_PATH}', 'w') as f:
         f.write(html)
     with open('/app/www/index.html', 'w') as f:
