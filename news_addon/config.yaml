@@ -1,0 +1,36 @@
+name: Fake News
+version: "1.0.0"
+slug: fake_news
+description: >-
+  De-enshittified news aggregator. Pulls clean articles from RSS feeds
+  across General, Texas/Houston, Tech, Finance, and Sports categories.
+  No ads, no tracking, no cookie banners — just news.
+url: https://github.com/gmarblestone/NewsApp
+arch:
+  - amd64
+  - aarch64
+  - armv7
+startup: services
+boot: auto
+init: false
+host_network: false
+
+map:
+  - config:rw
+
+ingress: true
+ingress_port: 5056
+panel_title: Fake News
+panel_icon: mdi:newspaper
+
+options:
+  categories: "general,texas,tech,finance,sports"
+  refresh_minutes: 30
+  max_articles_per_feed: 15
+  report_path: /config/www/fake_news.html
+
+schema:
+  categories: str
+  refresh_minutes: int(10,1440)
+  max_articles_per_feed: int(5,50)
+  report_path: str
