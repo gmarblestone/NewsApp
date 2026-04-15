@@ -1,5 +1,5 @@
 name: Fake News
-version: "1.0.0"
+version: "1.0.1"
 slug: fake_news
 description: >-
   De-enshittified news aggregator. Pulls clean articles from RSS feeds
