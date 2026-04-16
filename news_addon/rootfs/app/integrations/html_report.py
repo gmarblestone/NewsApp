@@ -13,7 +13,7 @@ from news_engine.models import NewsFeed
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 
 def _category_color(cat_key: str) -> str:
@@ -42,13 +42,18 @@ def generate_html_string(feed: NewsFeed, saved_articles: dict = None) -> str:
     if not feed.articles:
         return "<html><body><h1>No articles loaded</h1></body></html>"
 
+    # Only include articles that were successfully extracted
+    articles = [a for a in feed.articles if a.link in saved_articles]
+    if not articles:
+        return "<html><body><h1>No articles could be extracted</h1></body></html>"
+
     # Count per category
     cat_counts = {}
-    for a in feed.articles:
+    for a in articles:
         cat_counts[a.category] = cat_counts.get(a.category, 0) + 1
 
     # Build category tabs
-    tabs_html = f'<button class="cat-tab active" data-category="all">All ({len(feed.articles)})</button>\n'
+    tabs_html = f'<button class="cat-tab active" data-category="all">All ({len(articles)})</button>\n'
     for cat_key in feed.categories_used:
         count = cat_counts.get(cat_key, 0)
         if count == 0:
@@ -60,36 +65,36 @@ def generate_html_string(feed: NewsFeed, saved_articles: dict = None) -> str:
 
     # Build article cards
     cards_html = ""
-    for a in feed.articles:
+    for a in articles:
         color = _category_color(a.category)
         title_escaped = html_mod.escape(a.title)
         summary_escaped = html_mod.escape(a.summary)
         source_escaped = html_mod.escape(a.source)
         link_escaped = html_mod.escape(a.link, quote=True)
 
-        # Use local clean version if available, otherwise original
         local_path = saved_articles.get(a.link)
-        if local_path:
-            href = html_mod.escape(local_path, quote=True)
-            target = ""
-            badge = '<span class="reader-badge">📖</span>'
-        else:
-            href = link_escaped
-            target = ' target="_blank" rel="noopener noreferrer"'
-            badge = '<span class="ext-badge">↗</span>'
+        href = html_mod.escape(local_path, quote=True)
+        # Use URL hash as stable article ID for read tracking
+        import hashlib
+        art_id = hashlib.md5(a.link.encode()).hexdigest()[:12]
 
-        cards_html += f"""    <a href="{href}"{target} class="article-card" data-category="{a.category}">
+        cards_html += f"""    <div class="article-card" data-category="{a.category}" data-artid="{art_id}">
       <div class="article-meta">
         <span class="source-badge" style="background:{color}">{source_escaped}</span>
-        <span class="article-time">{a.time_ago} {badge}</span>
+        <span class="article-time">{a.time_ago}</span>
       </div>
-      <h3 class="article-title">{title_escaped}</h3>
-      <p class="article-summary">{summary_escaped}</p>
-    </a>
+      <a href="{href}" class="article-link" data-artid="{art_id}">
+        <h3 class="article-title">{title_escaped}</h3>
+        <p class="article-summary">{summary_escaped}</p>
+      </a>
+      <div class="card-actions">
+        <button class="dismiss-btn" data-artid="{art_id}" title="Mark as read">✓ Read</button>
+      </div>
+    </div>
 """
 
     # Feed status
-    status_parts = [f"{len(feed.articles)} articles"]
+    status_parts = [f"{len(articles)} articles"]
     if feed.failed_feeds:
         status_parts.append(f"{feed.failed_feeds}/{feed.total_feeds} feeds failed")
     else:
@@ -249,14 +254,29 @@ def generate_html_string(feed: NewsFeed, saved_articles: dict = None) -> str:
     background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 12px;
-    text-decoration: none;
     color: var(--text);
-    transition: box-shadow 0.15s, transform 0.1s;
+    transition: box-shadow 0.15s, transform 0.1s, opacity 0.3s;
     box-shadow: var(--shadow);
   }}
   .article-card:hover {{
     box-shadow: var(--shadow-hover);
     transform: translateY(-1px);
+  }}
+  .article-card.is-read {{
+    opacity: 0.45;
+  }}
+  .article-card.is-read .article-title {{
+    text-decoration: line-through;
+  }}
+  .article-card.hidden-read {{
+    display: none !important;
+  }}
+  .article-link {{
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }}
   .article-meta {{
     display: flex;
@@ -277,17 +297,30 @@ def generate_html_string(feed: NewsFeed, saved_articles: dict = None) -> str:
     font-size: 12px;
     color: var(--text-muted);
     white-space: nowrap;
+  }}
+  .card-actions {{
     display: flex;
-    align-items: center;
-    gap: 4px;
+    justify-content: flex-end;
+    margin-top: 4px;
   }}
-  .reader-badge {{
-    font-size: 10px;
-    opacity: 0.7;
+  .dismiss-btn {{
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 3px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.15s;
   }}
-  .ext-badge {{
-    font-size: 10px;
-    opacity: 0.4;
+  .dismiss-btn:hover {{
+    background: var(--tab-bg);
+    color: var(--text);
+  }}
+  .is-read .dismiss-btn {{
+    color: #16a34a;
+    border-color: #16a34a;
   }}
   .article-title {{
     font-size: 17px;
@@ -359,6 +392,7 @@ def generate_html_string(feed: NewsFeed, saved_articles: dict = None) -> str:
       </div>
     </div>
     <div class="header-actions">
+      <button class="header-btn" id="hideReadBtn">👁️ Hide Read</button>
       <button class="header-btn" id="refreshBtn">🔄 Refresh</button>
       <button class="header-btn" id="darkBtn">🌙 Dark</button>
       <button class="header-btn" id="printBtn">🖨️ Print</button>
@@ -380,21 +414,122 @@ def generate_html_string(feed: NewsFeed, saved_articles: dict = None) -> str:
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {{
-  // Category tabs
   var tabs = document.querySelectorAll('.cat-tab');
   var cards = document.querySelectorAll('.article-card');
-  tabs.forEach(function(tab) {{
-    tab.addEventListener('click', function() {{
-      var cat = this.dataset.category;
-      tabs.forEach(function(t) {{ t.classList.remove('active'); }});
-      this.classList.add('active');
-      cards.forEach(function(card) {{
-        card.style.display = (cat === 'all' || card.dataset.category === cat) ? '' : 'none';
-      }});
+  var readSet = JSON.parse(localStorage.getItem('fn_read') || '{{}}');
+  var hideRead = localStorage.getItem('fn_hide_read') === '1';
+  var activeCat = 'all';
+
+  // ── Read state ────────────────────────────────────────────────────────────
+  function applyReadState() {{
+    cards.forEach(function(card) {{
+      var id = card.dataset.artid;
+      if (readSet[id]) {{
+        card.classList.add('is-read');
+        if (hideRead) card.classList.add('hidden-read');
+        else card.classList.remove('hidden-read');
+      }} else {{
+        card.classList.remove('is-read', 'hidden-read');
+      }}
+    }});
+  }}
+
+  function markRead(artId) {{
+    if (readSet[artId]) {{
+      delete readSet[artId];
+    }} else {{
+      readSet[artId] = Date.now();
+    }}
+    localStorage.setItem('fn_read', JSON.stringify(readSet));
+    applyReadState();
+    applyFilter();
+  }}
+
+  // Dismiss buttons
+  document.querySelectorAll('.dismiss-btn').forEach(function(btn) {{
+    btn.addEventListener('click', function(e) {{
+      e.preventDefault();
+      e.stopPropagation();
+      markRead(this.dataset.artid);
     }});
   }});
 
-  // Dark mode
+  // ── Category filter ───────────────────────────────────────────────────────
+  function applyFilter() {{
+    cards.forEach(function(card) {{
+      var catMatch = (activeCat === 'all' || card.dataset.category === activeCat);
+      var readHidden = hideRead && card.classList.contains('is-read');
+      card.style.display = (catMatch && !readHidden) ? '' : 'none';
+    }});
+  }}
+
+  tabs.forEach(function(tab) {{
+    tab.addEventListener('click', function() {{
+      activeCat = this.dataset.category;
+      tabs.forEach(function(t) {{ t.classList.remove('active'); }});
+      this.classList.add('active');
+      applyFilter();
+    }});
+  }});
+
+  // ── Hide Read toggle ──────────────────────────────────────────────────────
+  var hideReadBtn = document.getElementById('hideReadBtn');
+  function updateHideReadBtn() {{
+    hideReadBtn.textContent = hideRead ? '👁️ Show Read' : '👁️ Hide Read';
+  }}
+  updateHideReadBtn();
+  hideReadBtn.addEventListener('click', function() {{
+    hideRead = !hideRead;
+    localStorage.setItem('fn_hide_read', hideRead ? '1' : '0');
+    updateHideReadBtn();
+    applyReadState();
+    applyFilter();
+  }});
+
+  // ── Save state before navigation ─────────────────────────────────────────
+  document.querySelectorAll('.article-link').forEach(function(link) {{
+    link.addEventListener('click', function() {{
+      // Mark as read on click
+      var artId = this.dataset.artid;
+      if (!readSet[artId]) {{
+        readSet[artId] = Date.now();
+        localStorage.setItem('fn_read', JSON.stringify(readSet));
+      }}
+      // Save scroll + filter state
+      sessionStorage.setItem('fn_scroll', window.scrollY);
+      sessionStorage.setItem('fn_cat', activeCat);
+      sessionStorage.setItem('fn_hide', hideRead ? '1' : '0');
+    }});
+  }});
+
+  // ── Restore state on return ───────────────────────────────────────────────
+  var savedScroll = sessionStorage.getItem('fn_scroll');
+  var savedCat = sessionStorage.getItem('fn_cat');
+  var savedHide = sessionStorage.getItem('fn_hide');
+  if (savedCat) {{
+    activeCat = savedCat;
+    tabs.forEach(function(t) {{
+      if (t.dataset.category === activeCat) t.classList.add('active');
+      else t.classList.remove('active');
+    }});
+  }}
+  if (savedHide !== null) {{
+    hideRead = savedHide === '1';
+    localStorage.setItem('fn_hide_read', savedHide);
+    updateHideReadBtn();
+  }}
+
+  applyReadState();
+  applyFilter();
+
+  if (savedScroll) {{
+    window.scrollTo(0, parseInt(savedScroll));
+    sessionStorage.removeItem('fn_scroll');
+    sessionStorage.removeItem('fn_cat');
+    sessionStorage.removeItem('fn_hide');
+  }}
+
+  // ── Dark mode ─────────────────────────────────────────────────────────────
   var darkBtn = document.getElementById('darkBtn');
   if (localStorage.getItem('fn_dark') === '1') {{
     document.body.classList.add('dark');
@@ -408,18 +543,13 @@ document.addEventListener('DOMContentLoaded', function() {{
   }});
 
   // Print / Share
-  var printBtn = document.getElementById('printBtn');
-  printBtn.addEventListener('click', function() {{
-    if (navigator.share) {{
-      navigator.share({{ url: location.href }});
-    }} else {{
-      window.print();
-    }}
+  document.getElementById('printBtn').addEventListener('click', function() {{
+    if (navigator.share) {{ navigator.share({{ url: location.href }}); }}
+    else {{ window.print(); }}
   }});
 
   // Refresh
-  var refreshBtn = document.getElementById('refreshBtn');
-  refreshBtn.addEventListener('click', function() {{
+  document.getElementById('refreshBtn').addEventListener('click', function() {{
     location.reload();
   }});
 }});

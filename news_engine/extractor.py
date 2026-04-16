@@ -295,7 +295,7 @@ def _build_article_html(article, extracted: dict) -> str:
 <body>
 
 <div class="top-bar">
-  <a href="index.html">← FAKE NEWS</a>
+  <a href="#" id="backBtn">← FAKE NEWS</a>
   <div class="top-bar-actions">
     <button class="top-bar-btn" id="darkBtn">🌙</button>
     <button class="top-bar-btn" id="printBtn">🖨️</button>
@@ -323,6 +323,17 @@ def _build_article_html(article, extracted: dict) -> str:
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {{
+  // Back button — go back in history to restore scroll/filter state
+  document.getElementById('backBtn').addEventListener('click', function(e) {{
+    e.preventDefault();
+    if (history.length > 1) {{
+      history.back();
+    }} else {{
+      location.href = 'index.html';
+    }}
+  }});
+
+  // Dark mode
   var darkBtn = document.getElementById('darkBtn');
   if (localStorage.getItem('fn_dark') === '1') {{
     document.body.classList.add('dark');
