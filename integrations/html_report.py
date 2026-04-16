@@ -13,7 +13,7 @@ from news_engine.models import NewsFeed
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 
 def _category_color(cat_key: str) -> str:
@@ -551,9 +551,26 @@ document.addEventListener('DOMContentLoaded', function() {{
     else {{ window.print(); }}
   }});
 
-  // Refresh
-  document.getElementById('refreshBtn').addEventListener('click', function() {{
-    location.reload();
+  // Refresh — trigger server-side refetch
+  var refreshBtn = document.getElementById('refreshBtn');
+  refreshBtn.addEventListener('click', function() {{
+    refreshBtn.textContent = '⏳ Refreshing...';
+    refreshBtn.disabled = true;
+    refreshBtn.style.opacity = '0.6';
+    fetch('api/refresh')
+      .then(function(r) {{ return r.json(); }})
+      .then(function(data) {{
+        if (data.status === 'busy') {{
+          refreshBtn.textContent = '⏳ Already running...';
+        }} else {{
+          refreshBtn.textContent = '⏳ Fetching news...';
+        }}
+        setTimeout(function() {{ location.reload(); }}, 30000);
+      }})
+      .catch(function() {{
+        refreshBtn.textContent = '❌ Error';
+        setTimeout(function() {{ location.reload(); }}, 5000);
+      }});
   }});
 }});
 </script>

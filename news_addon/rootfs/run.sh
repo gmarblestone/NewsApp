@@ -79,12 +79,26 @@ else
   NGINX_PID=$!
 fi
 
+# ── Start refresh API server ────────────────────────────────────────────────
+
+log "Starting refresh API server..."
+python3 /app/refresh_server.py &
+REFRESH_PID=$!
+sleep 1
+if kill -0 "${REFRESH_PID}" 2>/dev/null; then
+  log "Refresh server running (PID ${REFRESH_PID})"
+else
+  warn "Refresh server failed to start"
+fi
+
 # ── Graceful shutdown ────────────────────────────────────────────────────────
 
 shutdown() {
   log "Shutdown requested..."
   kill -TERM "${NGINX_PID}" 2>/dev/null || true
+  kill -TERM "${REFRESH_PID}" 2>/dev/null || true
   wait "${NGINX_PID}" 2>/dev/null || true
+  wait "${REFRESH_PID}" 2>/dev/null || true
   exit 0
 }
 trap shutdown INT TERM
@@ -93,6 +107,7 @@ trap shutdown INT TERM
 
 run_news() {
     log "Fetching news (categories: ${CATEGORIES})..."
+    touch /tmp/refresh_running
     cd /app && python3 -c "
 import sys, traceback
 sys.path.insert(0, '.')
@@ -129,8 +144,10 @@ except Exception as e:
 
     if [ $? -ne 0 ]; then
         err "News fetch failed"
+        rm -f /tmp/refresh_running
         return 1
     fi
+    rm -f /tmp/refresh_running
     log "News fetch complete"
 }
 
@@ -141,18 +158,39 @@ run_news || warn "Initial fetch failed — will retry"
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 
-log "Entering main loop (refresh every ${REFRESH_MINUTES} min)"
+log "Entering main loop (refresh every ${REFRESH_MINUTES} min, trigger check every 5s)"
 SLEEP_SECONDS=$((REFRESH_MINUTES * 60))
+ELAPSED=0
 
 while true; do
-    sleep "${SLEEP_SECONDS}"
+    sleep 5
+    ELAPSED=$((ELAPSED + 5))
 
-    run_news || warn "Scheduled fetch failed"
+    # Check for manual refresh trigger
+    if [ -f /tmp/refresh_trigger ]; then
+        log "Manual refresh triggered!"
+        rm -f /tmp/refresh_trigger
+        run_news || warn "Triggered fetch failed"
+        ELAPSED=0
+    fi
+
+    # Scheduled refresh
+    if [ "${ELAPSED}" -ge "${SLEEP_SECONDS}" ]; then
+        run_news || warn "Scheduled fetch failed"
+        ELAPSED=0
+    fi
 
     # Keep nginx alive
     if ! kill -0 "${NGINX_PID}" 2>/dev/null; then
         warn "nginx died — restarting..."
         nginx &
         NGINX_PID=$!
+    fi
+
+    # Keep refresh server alive
+    if ! kill -0 "${REFRESH_PID}" 2>/dev/null; then
+        warn "Refresh server died — restarting..."
+        python3 /app/refresh_server.py &
+        REFRESH_PID=$!
     fi
 done
