@@ -329,10 +329,11 @@ document.addEventListener('DOMContentLoaded', function() {{
   // Back button — go back in history to restore scroll/filter state
   document.getElementById('backBtn').addEventListener('click', function(e) {{
     e.preventDefault();
-    if (history.length > 1) {{
+    if (history.length > 1 && document.referrer) {{
       history.back();
     }} else {{
-      location.href = 'index.html';
+      // Articles are in articles/YYYY-MM-DD/ — go up 2 levels
+      location.href = '../../';
     }}
   }});
 

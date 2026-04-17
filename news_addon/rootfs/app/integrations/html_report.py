@@ -13,7 +13,7 @@ from news_engine.models import NewsFeed
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 
 def _category_color(cat_key: str) -> str:

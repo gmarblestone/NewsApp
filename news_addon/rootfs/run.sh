@@ -33,6 +33,14 @@ log "Ingress port: ${PORT}"
 mkdir -p "$(dirname "${REPORT_PATH}")" 2>/dev/null || true
 mkdir -p /app/www /run/nginx
 
+# Ensure articles dir lives alongside the report (for iframe /local/ access)
+# and is symlinked into nginx's docroot (for ingress access)
+REPORT_DIR="$(dirname "${REPORT_PATH}")"
+ARTICLES_DIR="${REPORT_DIR}/articles"
+mkdir -p "${ARTICLES_DIR}" 2>/dev/null || true
+ln -sfn "${ARTICLES_DIR}" /app/www/articles
+log "Articles dir: ${ARTICLES_DIR} (symlinked to /app/www/articles)"
+
 # ── Write loading page ───────────────────────────────────────────────────────
 
 cat > /app/www/index.html << 'LOADING'
@@ -126,7 +134,7 @@ try:
     # Extract full articles
     saved = {}
     try:
-        saved = save_articles(feed.articles, articles_dir='/app/www/articles')
+        saved = save_articles(feed.articles, articles_dir='${ARTICLES_DIR}')
         print('Extracted ' + str(len(saved)) + '/' + str(len(feed.articles)) + ' articles')
     except Exception as e:
         print('Article extraction warning: ' + str(e))
