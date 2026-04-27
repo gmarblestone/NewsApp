@@ -5,6 +5,7 @@ Clean, fast, no ads, no tracking, no cookie banners — just news.
 
 import html as html_mod
 import logging
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from news_engine.models import NewsFeed
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 
 
 def _category_color(cat_key: str) -> str:
@@ -31,6 +32,32 @@ def _category_icon(cat_key: str) -> str:
     return cat.get("icon", "📄")
 
 
+def _mix_articles_by_category(articles: list, category_order: list) -> list:
+    """Interleave categories so the default view is mixed, not dominated by one section."""
+    buckets = {cat_key: deque() for cat_key in category_order}
+    extra_categories = []
+
+    for article in articles:
+        if article.category not in buckets:
+            buckets[article.category] = deque()
+            extra_categories.append(article.category)
+        buckets[article.category].append(article)
+
+    mixed = []
+    ordered_categories = [*category_order, *extra_categories]
+    while True:
+        added = False
+        for cat_key in ordered_categories:
+            bucket = buckets.get(cat_key)
+            if bucket:
+                mixed.append(bucket.popleft())
+                added = True
+        if not added:
+            break
+
+    return mixed
+
+
 def generate_html_string(feed: NewsFeed, saved_articles: dict = None) -> str:
     """Build the complete HTML string from a NewsFeed.
     
@@ -46,6 +73,8 @@ def generate_html_string(feed: NewsFeed, saved_articles: dict = None) -> str:
     articles = [a for a in feed.articles if a.link in saved_articles]
     if not articles:
         return "<html><body><h1>No articles could be extracted</h1></body></html>"
+
+    articles = _mix_articles_by_category(articles, feed.categories_used)
 
     # Count per category
     cat_counts = {}
